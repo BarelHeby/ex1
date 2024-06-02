@@ -1,4 +1,4 @@
-.section .data
+.section .rodata
 .align 16
 val: .float 1.0, 1.0, 1.0, 1.0
 .section .text
@@ -16,7 +16,7 @@ formula2:
     pushq   %rsi
     pushq   %rdx
     // zero out xmm0
-    xorps   %xmm0, %xmm0
+    pxor   %xmm0, %xmm0
 
 .upper_loop:
     cmp    $0, %rdx
@@ -38,31 +38,47 @@ formula2:
 
     jmp .upper_loop
 .end_upper_loop:
-    // horizontal sum of xmm0
+    // movaps %xmm0, %xmm1
+    // shufps $0xB1, %xmm0, %xmm0
+    // addps %xmm0, %xmm1
 
-    // xmm1 = xmm0[2], xmm0[3], xmm0[2], xmm0[3]
-    movhlps %xmm0, %xmm1 
-    // xmm0[0] + xmm0[2], xmm0[1] + xmm0[3], xmm0[2], xmm0[3]
-    addps %xmm1, %xmm0 
-    // xmm1 = xmm0[0] + xmm0[2], xmm0[1] + xmm0[3], xmm0[2], xmm0[3]
-    movaps %xmm0, %xmm1 
-    // xmm1 = xmm0[1] + xmm0[3], xmm0[1] + xmm0[3], xmm0[1] + xmm0[3], xmm0[1] + xmm0[3]
-    shufps $0x55, %xmm1, %xmm1 
-    // xmm0[0] + xmm0[1] + xmm0[2] + xmm0[3], xmm0[1] + xmm0[3], xmm0[2], xmm0[3]
-    addps %xmm1, %xmm0 
+    // movaps %xmm1, %xmm0
+    // shufps $0x01, %xmm0, %xmm0
+    // addps %xmm1, %xmm0
+    // xmm0 = [x1,x2,x3,x4]
+    // xmm1 = [x2,x3,x4,x1]
+    // xmm2 = [x3,x4,x1,x2]
+    // xmm3 = [x4,x1,x2,x3]
+    movaps %xmm0, %xmm1
+    pshufd $0x39, %xmm1, %xmm1  
+
+    movaps %xmm1,%xmm2
+    pshufd $0x39, %xmm2, %xmm2  
+
+    movaps %xmm2,%xmm3
+    pshufd $0x39, %xmm3, %xmm3  
+
+    addps %xmm1, %xmm0
+    addps %xmm2, %xmm0
+    addps %xmm3, %xmm0
 
 .second_part:
     // result in xmm0
     // 1 xmm1 to store the running multipication
-    xorps %xmm1, %xmm1
+    pxor %xmm1, %xmm1
+
     // load 1 to each cell
-    xor %rdx, %rdx
-    inc %rdx
-    // movss $1.0, %xmm1
+    // xmm5 = [1,1,1,1]
+    pxor %xmm5, %xmm5
+    mov $0x3f800000,%eax
+    movd %eax, %xmm5
+    shufps $0x00, %xmm5, %xmm5 
+
+
     pop %rdx
     pop %rsi
     pop %rdi
-    movq $0,%r8
+    xor %r8, %r8
 // calculate mul(a[i]^2+b[i]^2-2*x[i]*y[i]+1) from i=1 to size
 .lower_loop:
     cmp   $0, %rdx
@@ -71,12 +87,31 @@ formula2:
     movaps (%rdi), %xmm2
     movaps (%rsi), %xmm3
 
-    // x-y
-    subps %xmm2, %xmm3
-    // store (x-y)^2 in xmm3
-    mulps %xmm3, %xmm3
-    // store ((x-y)^2)+1 in xmm3
-    addps %xmm5, %xmm3
+    // a[i]^2
+    movaps %xmm2, %xmm4
+    mulps %xmm4, %xmm4
+
+    // b[i]^2
+    movaps %xmm3, %xmm6
+    mulps %xmm6, %xmm6
+
+    // a[i]*b[i]
+    movaps %xmm2, %xmm7
+    mulps %xmm3, %xmm7
+
+    // 2*a[i]*b[i]
+    addps %xmm7, %xmm7
+
+    // a[i]^2+b[i]^2-2*a[i]*b[i]
+    addps %xmm4, %xmm6
+    subps %xmm7, %xmm6
+
+    // add 1 to the result
+    addps %xmm5, %xmm6
+
+
+    // store the result in xmm3
+    movaps %xmm6, %xmm3
 
     cmp $0, %r8
     je .first
@@ -95,21 +130,29 @@ formula2:
 
     jmp .lower_loop
 .end_lower_loop:
-    // multiple the float cells in xmm1
-    // xmm2 = xmm1[2], xmm1[3], xmm1[2], xmm1[3]
-    movhlps %xmm1, %xmm2
-    // xmm1[0] * xmm1[2], xmm1[1] * xmm1[3], xmm1[2], xmm1[3]
-    mulps %xmm2, %xmm1
-    // xmm2 = xmm1[0] * xmm1[2], xmm1[1] * xmm1[3], xmm1[2], xmm1[3]
-    movaps %xmm1, %xmm2
-    // xmm2 = xmm1[1] * xmm1[3], xmm1[1] * xmm1[3], xmm1[1] * xmm1[3], xmm1[1] * xmm1[3]
-    shufps $0x55, %xmm2, %xmm2
-    // xmm1[0] * xmm1[2] * xmm1[1] * xmm1[3], xmm1[1] * xmm1[3], xmm1[2], xmm1[3]
-    mulps %xmm2, %xmm1
+    // xmm1 = [x1,x2,x3,x4]
+    // xmm2 = [x2,x3,x4,x1]
+    // xmm3 = [x3,x4,x1,x2]
+    // xmm4 = [x4,x1,x2,x3]
+    movaps %xmm1,%xmm2
+    pshufd $0x39, %xmm2, %xmm2  
 
+    movaps %xmm2,%xmm3
+    pshufd $0x39, %xmm3, %xmm3  
+
+    movaps %xmm3,%xmm4
+    pshufd $0x39, %xmm4, %xmm4  
+
+
+    mulps %xmm2, %xmm1
+    mulps %xmm3, %xmm1
+    mulps %xmm4, %xmm1
 .end_equistion:
     // divide xmm0 by xmm1
-    divps %xmm1,%xmm0 
+    divps %xmm0,%xmm1 
+    // movaps %xmm1, %xmm0
+    // movaps %xmm1, %xmm0
+
 
 end:
     movq	%rbp, %rsp	#restore the old stack pointer - release all used memory.
