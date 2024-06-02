@@ -1,6 +1,3 @@
-.section .rodata
-.align 16
-val: .float 1.0, 1.0, 1.0, 1.0
 .section .text
 .global formula2
 
@@ -88,16 +85,19 @@ formula2:
     pop %rsi
     pop %rdi
     pxor %xmm4, %xmm4
+    movaps %xmm1, %xmm5
 .lp:
     cmp $0, %rdx
     je .end_totals
+    movaps %xmm5, %xmm1
     movaps (%rdi), %xmm2
     movaps (%rsi), %xmm3
 
     // a[i] * b[i]
     mulps %xmm3, %xmm2
     
-    divps %xmm2, %xmm1
+    // xmm2 = xmm2/xmm1
+    divps %xmm1, %xmm2
 
     addps %xmm2, %xmm4
 
@@ -123,15 +123,10 @@ formula2:
     addps %xmm3, %xmm4
     addps %xmm5, %xmm4
     // return value
-    movaps %xmm4, %xmm0
-// .end_equistion:
-    // divide xmm0 by xmm1
-    // divps %xmm0,%xmm1 
-    // movaps %xmm1, %xmm0
-    // movaps %xmm1, %xmm0
 
 
 end:
+    movaps %xmm4, %xmm0
     movq	%rbp, %rsp	#restore the old stack pointer - release all used memory.
 	popq	%rbp		#restore old frame pointer (the caller function frame)
 	ret
